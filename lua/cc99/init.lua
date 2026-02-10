@@ -1,3 +1,6 @@
+local cc99_fs = require("cc99.fs")
+local cc99_prompt = require("cc99.prompt")
+
 local M = {}
 
 local cc99_state = {
@@ -10,53 +13,35 @@ local cc99_state = {
 	},
 }
 
-local function get_project_root()
-	local root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-	if vim.v.shell_error ~= 0 then
-		return vim.fn.getcwd()
-	end
-	return root
-end
-
-local function get_cc99_md_path()
-	return get_project_root() .. "/.cc99/CC99.md"
-end
-
-local function read_cc99_md()
-	local path = get_cc99_md_path()
-	local f = io.open(path, "r")
-	if not f then
-		return nil
-	end
-	local content = f:read("*a")
-	f:close()
-	return content
-end
-
-local function ensure_cc99_md(callback)
-	local path = get_cc99_md_path()
+---@param cb function: this is the main part for cc99
+local function init(cb)
+	local path = cc99_fs.get_cc99_md_path()
 	print("[cc99] CC99.md path:", path)
 	if vim.fn.filereadable(path) == 1 then
 		print("[cc99] CC99.md exists, skipping generation")
-		callback()
+		cb()
 		return
 	end
 	-- Create .cc99 directory
-	local dir = get_project_root() .. "/.cc99"
+	local dir = cc99_fs.get_cc99_dir()
 	print("[cc99] Creating directory:", dir)
 	vim.fn.mkdir(dir, "p")
 	print("[cc99] Starting Claude for project analysis...")
 	-- Ask Claude to analyze the project and write CC99.md
+	local init_md_path = cc99_fs.get_prompts_dir() .. "/init.md"
+	local init_md_content = cc99_fs.read_md(init_md_path)
+	if not init_md_content then
+		print("[cc99] ERROR: could not read init.md from:", init_md_path)
+		vim.notify("CC99 Error: could not read init.md. Check the logs for details.", vim.log.levels.ERROR)
+		return
+	end
 	vim.system({
 		"claude",
 		"--dangerously-skip-permissions",
 		"--allowedTools",
 		"Read,Grep,Glob,LS",
 		"--print",
-		"Analyze this project. Understand the languages used, project structure, and purpose. "
-			.. "Output a concise markdown summary (in Japanese) covering: "
-			.. "1. Project overview 2. Languages/frameworks 3. Directory structure 4. Key files. "
-			.. "Output ONLY the markdown content, no code fences.",
+		init_md_content,
 	}, { text = true }, function(obj)
 		vim.schedule(function()
 			print("[cc99] Claude analysis done. code:", obj.code)
@@ -75,7 +60,7 @@ local function ensure_cc99_md(callback)
 			else
 				print("[cc99] WARNING: Claude returned empty stdout")
 			end
-			callback()
+			cb()
 		end)
 	end)
 end
@@ -127,84 +112,66 @@ local cc99_close = function()
 	cc99_state.open = false
 end
 
+---@param system_prompt string
+---@param user_prompt string
+---@return nil
+local exec = function(system_prompt, user_prompt)
+	print("[cc99] init callback fired")
+
+	vim.system({
+		"claude",
+		"--dangerously-skip-permissions",
+		"--allowedTools",
+		"Read,Grep,Glob,LS",
+		"--system-prompt",
+		system_prompt,
+		"--print",
+		user_prompt,
+	}, { text = true }, function(obj)
+		vim.schedule(function()
+			print("[cc99] Main Claude done. code:", obj.code)
+			print("[cc99] stderr:", obj.stderr or "(none)")
+			local stdout = obj.stdout or ""
+			print("[cc99] stdout length:", #stdout)
+			local code = stdout:match("<CODE>\n?(.-)\n?</CODE>")
+			if code then
+				code = code:gsub("^%s*\n", ""):gsub("\n%s*$", "")
+			else
+				code = stdout
+			end
+			local lines = vim.split(code, "\n")
+			vim.api.nvim_buf_set_lines(0, cc99_state.marked.start_line, cc99_state.marked.end_line, false, lines)
+		end)
+	end)
+end
+
 local cc99_exec = function()
-	local elems = vim.api.nvim_buf_get_lines(cc99_state.buf, 0, -1, false)
-	if not cc99_state.open then
-		return
-	end
 	vim.api.nvim_win_close(cc99_state.win, true)
 	cc99_state.open = false
 
-	local user_prompt = "<USER PROMPT>\n"
-	local prompt_content = table.concat(elems, " ")
-	user_prompt = user_prompt .. prompt_content .. "\n</USER PROMPT>\n"
+	--- user prompt
+	local user_prompt = cc99_prompt.build_user_prompt(
+		cc99_state.buf,
+		cc99_state.marked.start_line,
+		cc99_state.marked.end_line,
+		cc99_state.open
+	)
+	if not user_prompt then
+		print("[cc99] ERROR: user prompt is empty, aborting execution")
+		vim.notify("CC99 Error: user prompt is empty. Check the logs for details.", vim.log.levels.ERROR)
+		return
+	end
 
-	local selected_code = "<REPLACED>\n"
-	local code_lines = vim.api.nvim_buf_get_lines(0, cc99_state.marked.start_line, cc99_state.marked.end_line, false)
-	selected_code = selected_code .. table.concat(code_lines, "\n") .. "\n</REPLACED>\n"
-	user_prompt = user_prompt .. selected_code
+	--- system prompt
+	local system_prompt = cc99_prompt.build_system_prompt()
+	if not system_prompt then
+		print("[cc99] ERROR: system prompt is empty, aborting execution")
+		vim.notify("CC99 Error: system prompt is empty. Check the logs for details.", vim.log.levels.ERROR)
+		return
+	end
 
-	print("[cc99] ccx triggered, prompt:", user_prompt)
-	ensure_cc99_md(function()
-		print("[cc99] ensure_cc99_md callback fired")
-		local system_prompt = [[You are a code-only assistant embedded in a text editor.
-		 Your output will directly replace the user's selected code.
-         THIS RULE MUST BE FOLLOWED STRICTLY.
-
-		 RULES:
-             1. Output ONLY the replacement code.
-             2. NEVER include explanations, descriptions, or commentary.
-             3. NEVER wrap output in markdown code fences (``` or ```lua etc).
-             4. Output nothing before or after the code.
-
-         INPUT FORMAT:
-            <USER PROMPT>
-                {USER PROMPT }
-            </USER PROMPT>
-            <REPLACED>
-                {USER SELECTED CODE}
-            </REPLACED>
-
-        
-         OUTPUT FORMAT:
-         <CODE>
-            {YOUR OUTPUT REPLACEMENT CODE}
-         </CODE>
-         ]]
-
-		local context = read_cc99_md()
-		if context then
-			print("[cc99] CC99.md loaded, length:", #context)
-			system_prompt = system_prompt .. "\n\n<PROJECT_CONTEXT>\n" .. context .. "\n</PROJECT_CONTEXT>"
-		else
-			print("[cc99] CC99.md not found or empty")
-		end
-
-		vim.system({
-			"claude",
-			"--dangerously-skip-permissions",
-			"--allowedTools",
-			"Read,Grep,Glob,LS",
-			"--system-prompt",
-			system_prompt,
-			"--print",
-			user_prompt,
-		}, { text = true }, function(obj)
-			vim.schedule(function()
-				print("[cc99] Main Claude done. code:", obj.code)
-				print("[cc99] stderr:", obj.stderr or "(none)")
-				local stdout = obj.stdout or ""
-				print("[cc99] stdout length:", #stdout)
-				local code = stdout:match("<CODE>\n?(.-)\n?</CODE>")
-				if code then
-					code = code:gsub("^%s*\n", ""):gsub("\n%s*$", "")
-				else
-					code = stdout
-				end
-				local lines = vim.split(code, "\n")
-				vim.api.nvim_buf_set_lines(0, cc99_state.marked.start_line, cc99_state.marked.end_line, false, lines)
-			end)
-		end)
+	init(function()
+		exec(system_prompt, user_prompt)
 	end)
 end
 
@@ -217,4 +184,5 @@ vim.api.nvim_create_user_command("CC99Exec", cc99_exec, {})
 vim.keymap.set("v", "<leader>cco", "<cmd>CC99Open<CR>", {})
 vim.keymap.set("n", "<leader>ccq", "<cmd>CC99Close<CR>")
 vim.keymap.set("n", "<leader>ccx", "<cmd>CC99Exec<CR>", {})
+
 return M
