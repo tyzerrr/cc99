@@ -117,7 +117,6 @@ end
 ---@return nil
 local exec = function(system_prompt, user_prompt)
 	print("[cc99] init callback fired")
-
 	vim.system({
 		"claude",
 		"--dangerously-skip-permissions",
