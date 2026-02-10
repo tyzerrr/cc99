@@ -103,7 +103,7 @@ local create_floating_window = function()
 	cc99_state.open = true
 end
 
-vim.keymap.set("v", "<leader>cco", function()
+local cc99_open = function()
 	if cc99_state.open then
 		return
 	end
@@ -117,9 +117,17 @@ vim.keymap.set("v", "<leader>cco", function()
 	cc99_state.marked.start_line = start_line - 1
 	cc99_state.marked.end_line = end_line
 	create_floating_window()
-end)
+end
 
-vim.keymap.set("n", "<leader>ccx", function()
+local cc99_close = function()
+	if not cc99_state.open then
+		return
+	end
+	vim.api.nvim_win_close(cc99_state.win, true)
+	cc99_state.open = false
+end
+
+local cc99_exec = function()
 	local elems = vim.api.nvim_buf_get_lines(cc99_state.buf, 0, -1, false)
 	if not cc99_state.open then
 		return
@@ -167,7 +175,7 @@ vim.keymap.set("n", "<leader>ccx", function()
 		local context = read_cc99_md()
 		if context then
 			print("[cc99] CC99.md loaded, length:", #context)
-			system_prompt = system_prompt .. "\n\nPROJECT CONTEXT:\n" .. context
+			system_prompt = system_prompt .. "\n\n<PROJECT_CONTEXT>\n" .. context .. "\n</PROJECT_CONTEXT>"
 		else
 			print("[cc99] CC99.md not found or empty")
 		end
@@ -198,14 +206,15 @@ vim.keymap.set("n", "<leader>ccx", function()
 			end)
 		end)
 	end)
-end)
+end
 
-vim.keymap.set("n", "<leader>ccq", function()
-	if not cc99_state.open then
-		return
-	end
-	vim.api.nvim_win_close(cc99_state.win, true)
-	cc99_state.open = false
-end)
+--- user commands
+vim.api.nvim_create_user_command("CC99Open", cc99_open, {})
+vim.api.nvim_create_user_command("CC99Close", cc99_close, {})
+vim.api.nvim_create_user_command("CC99Exec", cc99_exec, {})
 
+--- remap
+vim.keymap.set("v", "<leader>cco", "<cmd>CC99Open<CR>", {})
+vim.keymap.set("n", "<leader>ccq", "<cmd>CC99Close<CR>")
+vim.keymap.set("n", "<leader>ccx", "<cmd>CC99Exec<CR>", {})
 return M
