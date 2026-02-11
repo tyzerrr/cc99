@@ -128,9 +128,48 @@ local exec = function(system_prompt, user_prompt)
 		cc99_mark.Mark.new(0, cc99_state.marked.start_line - 1)
 	)
 	requestStatus:start()
-	local cleanup = function()
-		requestStatus:stop()
+
+	local in_code = false
+	local code_lines = {}
+	local stdout_buffer = ""
+
+	local function process_line(line)
+		if line:match("^</CODE>") then
+			in_code = false
+		elseif in_code then
+			table.insert(code_lines, line)
+		elseif line:match("^<CODE>") then
+			in_code = true
+		else
+			local status_line = line:gsub("^%s+", ""):gsub("%s+$", "")
+			if #status_line > 0 then
+				vim.schedule(function()
+					requestStatus:push(status_line)
+				end)
+			end
+		end
 	end
+
+	local function drain_buffer()
+		while true do
+			local newline_pos = stdout_buffer:find("\n")
+			if not newline_pos then
+				break
+			end
+			local line = stdout_buffer:sub(1, newline_pos - 1)
+			stdout_buffer = stdout_buffer:sub(newline_pos + 1)
+			process_line(line)
+		end
+	end
+
+	local function flush_buffer()
+		drain_buffer()
+		if #stdout_buffer > 0 then
+			process_line(stdout_buffer)
+			stdout_buffer = ""
+		end
+	end
+
 	vim.system({
 		"claude",
 		"--dangerously-skip-permissions",
@@ -142,27 +181,27 @@ local exec = function(system_prompt, user_prompt)
 		user_prompt,
 	}, {
 		text = true,
+		stdout = function(_, data)
+			if not data then
+				return
+			end
+			stdout_buffer = stdout_buffer .. data
+			drain_buffer()
+		end,
 	}, function(obj)
+		flush_buffer()
 		vim.schedule(function()
 			print("[cc99] Main Claude done. code:", obj.code)
-			print("[cc99] stderr:", obj.stderr or "(none)")
-			local stdout = obj.stdout or ""
-			print("[cc99] stdout length:", #stdout)
-			local code = stdout:match("<CODE>\n?(.-)\n?</CODE>")
-			if code then
-				code = code:gsub("^%s*\n", ""):gsub("\n%s*$", "")
-			else
-				code = stdout
+			requestStatus:stop()
+			if #code_lines > 0 then
+				vim.api.nvim_buf_set_lines(
+					vim.api.nvim_get_current_buf(),
+					cc99_state.marked.start_line,
+					cc99_state.marked.end_line,
+					false,
+					code_lines
+				)
 			end
-			local lines = vim.split(code, "\n")
-			vim.api.nvim_buf_set_lines(
-				vim.api.nvim_get_current_buf(),
-				cc99_state.marked.start_line,
-				cc99_state.marked.end_line,
-				false,
-				lines
-			)
-			cleanup()
 		end)
 	end)
 end
@@ -206,7 +245,5 @@ vim.api.nvim_create_user_command("CC99Exec", cc99_exec, {})
 vim.keymap.set("v", "<leader>cco", "<cmd>CC99Open<CR>", {})
 vim.keymap.set("n", "<leader>ccq", "<cmd>CC99Close<CR>")
 vim.keymap.set("n", "<leader>ccx", "<cmd>CC99Exec<CR>", {})
-
-local print_hello = nil
 
 return M
