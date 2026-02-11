@@ -10,7 +10,6 @@ Mark.__index = Mark
 function Mark.new(buf, start_row)
     local self = setmetatable({}, Mark)
     self.ns_id = vim.api.nvim_create_namespace("cc99.mark")
-    print(buf)
     self.buf = buf
     ---NOTE: Maybe, column should be handled more carefully.
     self.extmark_id = vim.api.nvim_buf_set_extmark(self.buf, self.ns_id, start_row, 0, {})

@@ -82,12 +82,29 @@ function Claude:exec(system_prompt, user_prompt, marked)
         user_prompt,
     }, {
         text = true,
-        stdout = function(_, data)
+        stdout = function(err, data)
+            if err then
+                print("[cc99] Claude stdout error:", err)
+                vim.notify("[CC99 Error]: Claude has errors. " .. err, vim.log.levels.ERROR)
+                return
+            end
             if not data then
+                vim.notify("[CC99 Warning]: Claude returned no data.", vim.log.levels.WARN)
                 return
             end
             self.tsb:insert(data)
             self.tsb:drain()
+        end,
+        stderr = function(err, data)
+            if err then
+                print("[cc99] Claude stderr error:", err)
+                vim.notify("[CC99 Error]: Claude has stderr errors. " .. err, vim.log.levels.ERROR)
+                return
+            end
+            if not data then
+                vim.notify("[CC99 Warning]: Claude stderr returned no data.", vim.log.levels.WARN)
+                return
+            end
         end,
     }, function(obj)
         self.tsb:flush()

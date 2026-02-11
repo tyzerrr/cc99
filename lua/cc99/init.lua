@@ -200,11 +200,6 @@ CC99.mark = function()
     CC99_Float:mark()
 end
 
-CC99.quit = function()
-    -- CC99_Float:quit()
-    print("quit cc99")
-end
-
 CC99.close = function()
     CC99_Float:close()
 end
@@ -220,14 +215,12 @@ CC99.setup = function(opts)
 
     --- user commands
     vim.api.nvim_create_user_command("CC99Mark", CC99.mark, {})
-    vim.api.nvim_create_user_command("CC99Quit", CC99.quit, {})
     vim.api.nvim_create_user_command("CC99Close", CC99.close, {})
     vim.api.nvim_create_user_command("CC99Exec", CC99.exec, {})
 
     --- remap
     vim.keymap.set("v", "<leader>ccm", "<cmd>CC99Mark<CR>", {})
-    vim.keymap.set("n", "<leader>ccq", "<cmd>CC99Quit<CR>", {})
-    vim.keymap.set("n", "<leader>ccc", "<cmd>CC99Close<CR>", {})
+    vim.keymap.set("n", "<leader>ccq", "<cmd>CC99Close<CR>", {})
     vim.keymap.set("n", "<leader>ccx", "<cmd>CC99Exec<CR>", {})
 end
 
