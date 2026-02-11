@@ -27,7 +27,7 @@ end
 ---@return string | nil
 PROMPT.build_user_prompt = function(bufnr, mark_start_line, mark_end_line, buf_open)
 	local elems = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-	if not buf_open then
+	if buf_open then
 		print("[cc99] ERROR: build_user_prompt called but cc99 is not open")
 		return
 	end
