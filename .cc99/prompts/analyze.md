@@ -11,3 +11,4 @@ Output a concise markdown summary covering the following points.
 
 ## Restriction
 Output **ONLY the markdown content, no code fences.**
+Write to {PROJECT_ROOT}/.cc99/CC99.md.
