@@ -84,12 +84,16 @@ function Claude:exec(system_prompt, user_prompt, marked)
         text = true,
         stdout = function(err, data)
             if err then
-                print("[cc99] Claude stdout error:", err)
-                vim.notify("[CC99 Error]: Claude has errors. " .. err, vim.log.levels.ERROR)
+                vim.schedule(function()
+                    print("[cc99] Claude stdout error:", err)
+                    vim.notify("[CC99 Error stdout]: Claude has errors. " .. err, vim.log.levels.ERROR)
+                end)
                 return
             end
             if not data then
-                vim.notify("[CC99 Warning]: Claude returned no data.", vim.log.levels.WARN)
+                vim.schedule(function()
+                    vim.notify("[CC99 Warning stdout]: Claude returned no data.", vim.log.levels.WARN)
+                end)
                 return
             end
             self.tsb:insert(data)
@@ -97,12 +101,16 @@ function Claude:exec(system_prompt, user_prompt, marked)
         end,
         stderr = function(err, data)
             if err then
-                print("[cc99] Claude stderr error:", err)
-                vim.notify("[CC99 Error]: Claude has stderr errors. " .. err, vim.log.levels.ERROR)
+                vim.schedule(function()
+                    print("[cc99] Claude stderr error:", err)
+                    vim.notify("[CC99 Error stderr]: Claude has stderr errors. " .. err, vim.log.levels.ERROR)
+                end)
                 return
             end
             if not data then
-                vim.notify("[CC99 Warning]: Claude stderr returned no data.", vim.log.levels.WARN)
+                vim.schedule(function()
+                    vim.notify("[CC99 Warning stderr]: Claude stderr returned no data.", vim.log.levels.WARN)
+                end)
                 return
             end
         end,
@@ -110,15 +118,23 @@ function Claude:exec(system_prompt, user_prompt, marked)
         self.tsb:flush()
         vim.schedule(function()
             print("[cc99] Main Claude done. code:", obj.code)
-            self.request_status:stop()
             if #self.tsb.code_lines > 0 then
+                local pos = vim.api.nvim_buf_get_extmark_by_id(
+                    self.request_status.mark.buf,
+                    self.request_status.mark.ns_id,
+                    self.request_status.mark.extmark_id,
+                    {}
+                )
+                local start_row = pos[1] + 1
+                local end_row = start_row + marked.end_row - marked.start_row
                 vim.api.nvim_buf_set_lines(
                     vim.api.nvim_get_current_buf(),
-                    marked.start_row,
-                    marked.end_row,
+                    start_row,
+                    end_row,
                     false,
                     self.tsb.code_lines
                 )
+                self.request_status:stop()
             end
         end)
     end)
