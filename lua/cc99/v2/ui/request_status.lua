@@ -86,3 +86,8 @@ end
 function V2RequestStatus:stop()
   self.is_running = false
 end
+
+return {
+  V2StatusLine = V2StatusLine,
+  V2RequestStatus = V2RequestStatus,
+}
