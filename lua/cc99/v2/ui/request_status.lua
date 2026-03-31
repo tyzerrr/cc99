@@ -18,7 +18,7 @@ function V2StatusLine.new(header_line, update_time)
     message = {},
     max_lines = 1,
     update_time = update_time,
-  })
+  }, V2StatusLine)
 end
 
 function V2StatusLine:update()
