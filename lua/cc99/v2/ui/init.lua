@@ -93,6 +93,11 @@ function V2Float:close()
   self.is_open = false
 end
 
+function V2Float:cleanup()
+  vim.api.nvim_buf_del_extmark(self.buf, self.mark.ns_id, self.mark.extmark_id)
+  vim.api.nvim_buf_delete(self.buf, { force = true })
+end
+
 return {
   V2Float = V2Float,
   V2Mark = V2Mark,

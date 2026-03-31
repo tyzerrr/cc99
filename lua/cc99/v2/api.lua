@@ -84,6 +84,8 @@ M.close_float = function()
     return
   end
   float:close()
+  float:cleanup()
+  float = nil
 end
 
 ---@return string | nil
